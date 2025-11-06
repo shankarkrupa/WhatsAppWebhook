@@ -88,3 +88,49 @@ The subscriber will listen for messages on the Redis channel and send email noti
 - `GET /whatsappwebhook`: Webhook verification endpoint
 - `POST /whatsappwebhook`: Webhook message receiver
 - `GET /whatsappmessages`: List all stored messages
+
+## Testing
+
+Run unit tests:
+```bash
+pip install -r requirements-dev.txt
+pytest test_webhook.py -v
+```
+
+Run integration test:
+```bash
+python test_integration.py
+```
+
+## Project Structure
+
+```
+WhatsAppWebhook/
+├── main.py                 # FastAPI application and webhook endpoints
+├── config.py              # Configuration management
+├── database.py            # Database connection setup
+├── models.py              # SQLAlchemy models
+├── subscriber.py          # Redis subscriber and email sender
+├── utils/
+│   ├── parser.py          # WhatsApp message parser
+│   └── redis_publisher.py # Redis publisher utility
+├── test_webhook.py        # Unit tests
+├── test_integration.py    # Integration tests
+├── requirements.txt       # Production dependencies
+├── requirements-dev.txt   # Development dependencies
+├── .env.example           # Example environment configuration
+└── .gitignore            # Git ignore rules
+```
+
+## Architecture
+
+The system uses a pub/sub pattern with Redis:
+
+1. **Webhook Receiver** (main.py): Receives WhatsApp messages and publishes to Redis
+2. **Redis**: Acts as a message broker between components
+3. **Subscriber** (subscriber.py): Consumes messages from Redis and sends email notifications
+
+This architecture allows for:
+- **Scalability**: Multiple subscribers can process messages
+- **Reliability**: Messages are queued in Redis
+- **Decoupling**: Webhook and email processing are independent
