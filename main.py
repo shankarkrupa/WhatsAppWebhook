@@ -1,4 +1,5 @@
 from utils.parser import parse_whatsapp_message
+from utils.redis_publisher import redis_publisher
 from fastapi import FastAPI, Depends, Request
 from database import Base, engine, SessionLocal
 from sqlalchemy.orm import Session
@@ -73,6 +74,21 @@ async def receive_whatsapp_message(request: Request, db: Session = Depends(get_d
         db.add(db_msg)
         db.commit()
         print("received message is saved")
+        
+        # Publish to Redis
+        message_data = {
+            "wa_id": wa_id,
+            "sender_name": contact.get("name"),
+            "message_id": message.get("id"),
+            "message_type": parsed["message_type"],
+            "message_body": parsed["message_body"],
+            "media_id": parsed["media_id"],
+            "mime_type": parsed["mime_type"],
+            "filename": parsed["filename"],
+            "links": parsed["links"]
+        }
+        redis_publisher.publish_message(message_data)
+        
         return {"status": "logged"}
     except Exception as e:
         print(str(e))
