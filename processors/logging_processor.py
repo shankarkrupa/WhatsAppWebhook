@@ -11,6 +11,9 @@ class LoggingProcessor(MessageProcessor):
     This is an example processor to demonstrate the extensibility of the system.
     """
     
+    # Maximum length of message body to display
+    MAX_BODY_LENGTH = 50
+    
     def process(self, message_data: Dict[str, Any]) -> bool:
         """
         Log message details to console.
@@ -25,7 +28,9 @@ class LoggingProcessor(MessageProcessor):
         print(f"  - Message ID: {message_data.get('message_id', 'N/A')}")
         print(f"  - From: {message_data.get('sender_name', 'Unknown')} ({message_data.get('wa_id', 'N/A')})")
         print(f"  - Type: {message_data.get('message_type', 'N/A')}")
-        print(f"  - Body: {message_data.get('message_body', 'N/A')[:50]}...")  # First 50 chars
+        body = message_data.get('message_body', 'N/A')
+        truncated_body = body[:self.MAX_BODY_LENGTH] + '...' if len(body) > self.MAX_BODY_LENGTH else body
+        print(f"  - Body: {truncated_body}")
         print(f"  - Links: {message_data.get('links', 'None')}")
         
         return True
