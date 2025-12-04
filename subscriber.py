@@ -1,57 +1,100 @@
 import redis
 import json
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from config import config
 import time
+from typing import List
+from processors.base import MessageProcessor
+from processors.email_processor import EmailNotificationProcessor
+from processors.logging_processor import LoggingProcessor
+
 
 class EmailSender:
-    """Email sender utility"""
+    """Email sender utility - DEPRECATED: Use EmailNotificationProcessor instead"""
     
     @staticmethod
     def send_email(subject: str, body: str, to_email: str = None) -> bool:
-        """Send an email with the given subject and body"""
-        if not to_email:
-            to_email = config.EMAIL_TO
+        """
+        Send an email with the given subject and body.
         
-        # Skip if SMTP is not configured
-        if not config.SMTP_USERNAME or not config.SMTP_PASSWORD:
-            print("SMTP credentials not configured, skipping email send")
-            return False
-        
-        try:
-            msg = MIMEMultipart()
-            msg['From'] = config.EMAIL_FROM or config.SMTP_USERNAME
-            msg['To'] = to_email
-            msg['Subject'] = subject
-            
-            msg.attach(MIMEText(body, 'plain'))
-            
-            # Connect to SMTP server
-            server = smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT)
-            server.starttls()
-            server.login(config.SMTP_USERNAME, config.SMTP_PASSWORD)
-            
-            # Send email
-            text = msg.as_string()
-            server.sendmail(msg['From'], to_email, text)
-            server.quit()
-            
-            print(f"Email sent successfully to {to_email}")
-            return True
-        except Exception as e:
-            print(f"Error sending email: {str(e)}")
-            return False
+        DEPRECATED: This method is maintained for backward compatibility.
+        Use EmailNotificationProcessor for new implementations.
+        """
+        from processors.email_processor import EmailNotificationProcessor
+        processor = EmailNotificationProcessor()
+        # Create a minimal message data structure for compatibility
+        message_data = {
+            "message_id": "legacy",
+            "sender_name": "Unknown",
+            "wa_id": "N/A",
+            "message_type": "N/A",
+            "message_body": body,
+            "links": "legacy"
+        }
+        return processor._send_email(subject, body, to_email)
 
 
 class RedisSubscriber:
-    """Redis subscriber for WhatsApp messages"""
+    """
+    Redis subscriber for WhatsApp messages with support for multiple message processors.
     
-    def __init__(self):
+    This class allows plugging in multiple processor classes that will be executed
+    for each message received from the Redis channel.
+    """
+    
+    def __init__(self, processors: List[MessageProcessor] = None):
+        """
+        Initialize the RedisSubscriber with optional list of processors.
+        
+        Args:
+            processors: List of MessageProcessor instances to process messages.
+                       If None, default processors (EmailNotificationProcessor, LoggingProcessor) are used.
+        """
         self.redis_client = None
         self.pubsub = None
+        
+        # Initialize processors
+        if processors is None:
+            # Default processors
+            self.processors = [
+                EmailNotificationProcessor(),
+                LoggingProcessor()
+            ]
+        else:
+            self.processors = processors
+        
+        print(f"Initialized with {len(self.processors)} processor(s):")
+        for processor in self.processors:
+            print(f"  - {processor.name}")
+        
         self._connect()
+    
+    def add_processor(self, processor: MessageProcessor):
+        """
+        Add a new processor to the list of processors.
+        
+        Args:
+            processor: A MessageProcessor instance to add
+        """
+        self.processors.append(processor)
+        print(f"Added processor: {processor.name}")
+    
+    def remove_processor(self, processor_name: str) -> bool:
+        """
+        Remove a processor by name.
+        
+        Args:
+            processor_name: Name of the processor to remove
+        
+        Returns:
+            bool: True if processor was removed, False if not found
+        """
+        for i, processor in enumerate(self.processors):
+            if processor.name == processor_name:
+                self.processors.pop(i)
+                print(f"Removed processor: {processor_name}")
+                return True
+        print(f"Processor not found: {processor_name}")
+        return False
     
     def _connect(self):
         """Connect to Redis server"""
@@ -77,31 +120,22 @@ class RedisSubscriber:
             self.pubsub = None
     
     def process_message(self, message_data: dict):
-        """Process a WhatsApp message from Redis"""
+        """
+        Process a WhatsApp message from Redis using all registered processors.
+        
+        Args:
+            message_data: Dictionary containing the message data
+        """
         print(f"Processing message: {message_data.get('message_id')}")
         
-        # Extract links from the message
-        links = message_data.get("links", "")
-        
-        if links:
-            # Prepare email content
-            subject = f"WhatsApp Link from {message_data.get('sender_name', 'Unknown')}"
-            body = f"""
-WhatsApp Message Details:
---------------------------
-From: {message_data.get('sender_name', 'Unknown')} ({message_data.get('wa_id', 'N/A')})
-Message Type: {message_data.get('message_type', 'N/A')}
-Message Body: {message_data.get('message_body', 'N/A')}
-
-Links Found:
-{links}
-
-Message ID: {message_data.get('message_id', 'N/A')}
-"""
-            # Send email
-            EmailSender.send_email(subject, body)
-        else:
-            print(f"No links found in message {message_data.get('message_id')}")
+        # Execute all processors
+        for processor in self.processors:
+            try:
+                success = processor.process(message_data)
+                if not success:
+                    print(f"[{processor.name}] Processing returned failure")
+            except Exception as e:
+                print(f"[{processor.name}] Error during processing: {str(e)}")
     
     def start_listening(self):
         """Start listening for messages on Redis channel"""
